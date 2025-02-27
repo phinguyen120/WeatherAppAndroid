@@ -34,6 +34,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -49,6 +50,8 @@ public class MainActivity extends AppCompatActivity {
     ImageView img_iconweather;
     private static final String API_KEY = "5177d42db8347ccd0f85969c6626c7b4";
     private LocationHelper locationHelper;
+    List<String> permissions = new ArrayList<>();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -60,16 +63,26 @@ public class MainActivity extends AppCompatActivity {
         img_iconweather=findViewById(R.id.icon_weather);
         txt_description=findViewById(R.id.txt_description);
         locationHelper = new LocationHelper(this);
-
+        // Kiểm tra quyền ACCESS_FINE_LOCATION
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 1000);
-        } else {
-            getLocation();
+            permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
         }
+
+        // Kiểm tra quyền POST_NOTIFICATIONS (chỉ yêu cầu trên Android 13 trở lên)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1002);
+                permissions.add(android.Manifest.permission.POST_NOTIFICATIONS);
             }
+        }
+
+// Nếu có quyền nào cần yêu cầu, gọi requestPermissions
+        if (!permissions.isEmpty()) {
+            ActivityCompat.requestPermissions(this,
+                    permissions.toArray(new String[0]),
+                    1000);
+        } else {
+            // Nếu đã có đủ quyền, thực hiện getLocation
+            getLocation();
         }
     }
     @Override
@@ -79,6 +92,7 @@ public class MainActivity extends AppCompatActivity {
             getLocation();
         }
     }
+
 
     private void getLocation() {
         locationHelper.getCurrentLocation(new LocationCallback() {
@@ -94,18 +108,27 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-    private void getCityName(double latitude, double longitude) {
+    public String getCityName(double latitude, double longitude) {
+        String cityName = "Unknown";
         Geocoder geocoder = new Geocoder(this, Locale.getDefault());
         try {
             List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 1);
-            if (addresses != null && !addresses.isEmpty()) {
-                String cityName = addresses.get(0).getLocality();  // Tên thành phố
-                txt_location.setText(cityName);
-                FetchWeatherData(cityName);
+            if (addresses.size() > 0) {
+                cityName = addresses.get(0).getLocality();
+                if (cityName == null) {
+                    cityName = addresses.get(0).getAdminArea(); // Thử lấy tên tỉnh/thành phố
+                }
+                if (cityName == null) {
+                    cityName = addresses.get(0).getSubAdminArea(); // Thử lấy tên quận/huyện
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        Log.d("CityName", "City: " + cityName);
+        FetchWeatherData(cityName);
+        txt_location.setText(cityName);
+        return cityName;
     }
     private void FetchWeatherData(String cityName) {
 
@@ -167,7 +190,6 @@ public class MainActivity extends AppCompatActivity {
                     String message = String.format("Nhiệt độ: %.0f°C - %s", temperature, description);
                     NotificationHelper notificationHelper = new NotificationHelper(this);
                     notificationHelper.showWeatherNotification(title, message);
-
                     // Lưu thông tin thời tiết mới nhất
                     SharedPreferences.Editor editor = sharedPreferences.edit();
                     editor.putLong("temp", Double.doubleToLongBits(temperature));
